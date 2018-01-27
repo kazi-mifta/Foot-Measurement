@@ -12,15 +12,38 @@ import cv2
 def midpoint(ptA, ptB):
     return (ptA[0] + ptB[0]) * 0.5, (ptA[1] + ptB[1]) * 0.5
 
+
+def crop_minAreaRect(img, rect):
+
+    # rotate img
+    angle = rect[2]
+    rows,cols = img.shape[0], img.shape[1]
+    M = cv2.getRotationMatrix2D((cols/2,rows/2),angle,1)
+    img_rot = cv2.warpAffine(img,M,(cols,rows))
+
+    # rotate bounding box
+    rect0 = (rect[0], rect[1], 0.0)
+    box = cv2.cv.BoxPoints(rect)
+    pts = np.int0(cv2.transform(np.array([box]), M))[0]    
+    pts[pts < 0] = 0
+
+    # crop
+    img_crop = img_rot[pts[1][1]:pts[0][1], 
+                       pts[1][0]:pts[2][0]]
+
+    return img_crop
+
+
+
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
-ap.add_argument("-q", "--query", required = True,
-	help = "Path to the query image")
+ap.add_argument("-q1", "--query1", required = True,
+	help = "Path to the query image for Feet Width")
 args = vars(ap.parse_args())
 
 # load the query image, compute the ratio of the old height
 # to the new height, clone it, and resize it
-image = cv2.imread(args["query"])
+image = cv2.imread(args["query1"])
 ratio = image.shape[0] / 300.0
 orig = image.copy()
 image = imutils.resize(image, height = 300)
@@ -29,16 +52,148 @@ image = imutils.resize(image, height = 300)
 # in the image
 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 gray = cv2.bilateralFilter(gray, 11, 17, 17)
+gray = cv2.medianBlur(gray,5)
 edged = cv2.Canny(gray, 30, 200)
+ 
 
 # find contours in the edged image, keep only the largest
 # ones, and initialize our screen contour
 (cnts, _) = cv2.findContours(edged.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-cnts = sorted(cnts, key = cv2.contourArea, reverse = True)[:10]
+#cnts = sorted(cnts, key = cv2.contourArea, reverse = True)[:10]
 A4 = None
 
 
+for c in cnts:
+	# approximate the contour
+	peri = cv2.arcLength(c, True)
+	approx = cv2.approxPolyDP(c, 0.02 * peri, True)
 
+	# if our approximated contour has four points, then
+	# we can assume that we have found our A4 Page
+	if len(approx) >= 4:
+		A4 = approx
+		break
+
+rect = cv2.minAreaRect(A4)
+box = cv2.cv.BoxPoints(rect) if imutils.is_cv2() else cv2.boxPoints(rect)
+box = np.array(box, dtype="int")
+
+# order the points in the contour such that they appear
+# in top-left, top-right, bottom-right, and bottom-left
+# order, then draw the outline of the rotated bounding
+# box
+box = perspective.order_points(box)
+#cv2.drawContours(image, [box.astype("int")], -1, (0, 255, 0), 2)
+
+# unpack the ordered bounding box, then compute the midpoint
+# between the top-left and top-right coordinates, followed by
+# the midpoint between bottom-left and bottom-right coordinates
+(tl, tr, br, bl) = box
+(tltrX, tltrY) = midpoint(tl, tr)
+(blbrX, blbrY) = midpoint(bl, br)
+
+# compute the midpoint between the top-left and top-right points,
+# followed by the midpoint between the top-righ and bottom-right
+(tlblX, tlblY) = midpoint(tl, bl)
+(trbrX, trbrY) = midpoint(tr, br)
+
+
+dA = dist.euclidean((tltrX, tltrY), (blbrX, blbrY))
+dB = dist.euclidean((tlblX, tlblY), (trbrX, trbrY))
+
+
+
+pixelsPerMetric = dB / 8.27
+
+
+# compute the size of the object
+dimA = dA / pixelsPerMetric
+dimB = dB / pixelsPerMetric
+
+# draw the object sizes on the image
+cv2.putText(image, "{:.2f}in".format(dimB),
+	(int(tltrX - 15), int(tltrY - 10)), cv2.FONT_HERSHEY_SIMPLEX,
+	0.45, (255, 255, 255), 2)
+cv2.putText(image, "{:.2f}in".format(dimA),
+	(int(trbrX + 10), int(trbrY)), cv2.FONT_HERSHEY_SIMPLEX,
+	0.45, (255, 255, 255), 2)
+
+
+
+
+img_croped = crop_minAreaRect(image, rect)
+
+
+gray_cropped = cv2.cvtColor(img_croped, cv2.COLOR_BGR2GRAY)
+gray_cropped = cv2.bilateralFilter(gray_cropped, 11, 17, 17)
+gray_cropped = cv2.medianBlur(gray_cropped,5)
+edge_feet = cv2.Canny(gray_cropped, 30, 200)
+
+
+
+(feet_cntr, _) = cv2.findContours(edge_feet.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+feet = None
+
+for d in feet_cntr:
+	#This Section is 
+	peri = cv2.arcLength(d, True)
+	approx = cv2.approxPolyDP(d, 0.01 * peri, True)
+
+	if len(approx) >= 4:
+		feet = approx
+		break
+
+feet_rect = cv2.minAreaRect(feet)
+feet_box = cv2.cv.BoxPoints(feet_rect) if imutils.is_cv2() else cv2.boxPoints(feet_rect)
+feet_box = np.array(feet_box, dtype="int")
+feet_box = perspective.order_points(feet_box)
+#cv2.drawContours(image, [box.astype("int")], -1, (0, 255, 0), 2)
+
+# unpack the ordered bounding box, then compute the midpoint
+# between the top-left and top-right coordinates, followed by
+# the midpoint between bottom-left and bottom-right coordinates
+(tl, tr, br, bl) = feet_box
+(tltrX, tltrY) = midpoint(tl, tr)
+(blbrX, blbrY) = midpoint(bl, br)
+
+# compute the midpoint between the top-left and top-right points,
+# followed by the midpoint between the top-righ and bottom-right
+(tlblX, tlblY) = midpoint(tl, bl)
+(trbrX, trbrY) = midpoint(tr, br)
+
+
+#dA = dist.euclidean((tltrX, tltrY), (blbrX, blbrY))
+width = dist.euclidean((tlblX, tlblY), (trbrX, trbrY))
+
+#dimA = dA / pixelsPerMetric
+feet_width = width / pixelsPerMetric
+
+# draw the object sizes on the image
+
+
+
+
+
+
+
+cv2.drawContours(img_croped, [feet_box.astype("int")], -1, (0, 255, 0), 2)
+ 
+
+cv2.putText(img_croped, "{:.2f}in".format(feet_width),
+	(int(5), int(20 )), cv2.FONT_HERSHEY_SIMPLEX,
+	0.65, (0, 0, 255), 2)
+
+cv2.imshow("Image",image)
+cv2.imshow("Feet",img_croped)
+cv2.waitKey(0)
+
+
+
+
+
+
+
+'''
 # loop over our contours
 for c in cnts:
 	# approximate the contour
@@ -151,3 +306,4 @@ cv2.putText(image, "W: {:.3f}in".format(disB),
 
 cv2.imwrite("output.jpg", image)
 #python test.py --query test1.jpg
+'''
