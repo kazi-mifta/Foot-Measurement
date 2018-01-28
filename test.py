@@ -121,14 +121,13 @@ cv2.putText(image, "{:.2f}in".format(dimA),
 
 
 
-img_croped = crop_minAreaRect(image, rect)
+img_croped = image[int(tl[1])+5:int(bl[1])-40,int(tl[0])+10:int(tr[0])-10]
 
 
-gray_cropped = cv2.cvtColor(img_croped, cv2.COLOR_BGR2GRAY)
-gray_cropped = cv2.bilateralFilter(gray_cropped, 11, 17, 17)
-gray_cropped = cv2.medianBlur(gray_cropped,5)
-edge_feet = cv2.Canny(gray_cropped, 30, 200)
-
+edge_feet = cv2.Canny(img_croped, 50, 100)
+edge_feet = cv2.dilate(edge_feet, None, iterations=1)
+edge_feet = cv2.erode(edge_feet, None, iterations=1)
+ 
 
 
 (feet_cntr, _) = cv2.findContours(edge_feet.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -139,8 +138,8 @@ for d in feet_cntr:
 	peri = cv2.arcLength(d, True)
 	approx = cv2.approxPolyDP(d, 0.01 * peri, True)
 
-	if len(approx) >= 4:
-		feet = approx
+	if cv2.contourArea(d) > 30:
+		feet = d
 		break
 
 feet_rect = cv2.minAreaRect(feet)
@@ -169,13 +168,6 @@ width = dist.euclidean((tlblX, tlblY), (trbrX, trbrY))
 feet_width = width / pixelsPerMetric
 
 # draw the object sizes on the image
-
-
-
-
-
-
-
 cv2.drawContours(img_croped, [feet_box.astype("int")], -1, (0, 255, 0), 2)
  
 
@@ -183,7 +175,8 @@ cv2.putText(img_croped, "{:.2f}in".format(feet_width),
 	(int(5), int(20 )), cv2.FONT_HERSHEY_SIMPLEX,
 	0.65, (0, 0, 255), 2)
 
-cv2.imshow("Image",image)
+cv2.imshow("Original",gray)
+cv2.imshow("Edges",edge_feet)
 cv2.imshow("Feet",img_croped)
 cv2.waitKey(0)
 
@@ -193,7 +186,18 @@ cv2.waitKey(0)
 
 
 
+
+
+
+
+
+
+
+
+
+
 '''
+
 # loop over our contours
 for c in cnts:
 	# approximate the contour
@@ -305,5 +309,5 @@ cv2.putText(image, "W: {:.3f}in".format(disB),
         0.65, (0, 255, 0), 2)
 
 cv2.imwrite("output.jpg", image)
-#python test.py --query test1.jpg
+#python test.py --query1 test.jpg
 '''
